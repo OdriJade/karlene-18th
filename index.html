@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Photo Album</title>
+    <link rel="stylesheet" href="shared.css" />
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Lora:ital@0;1&display=swap" rel="stylesheet" />
+    <style>
+        :root {
+            --wine: #722f37; --wine-dark: #3d0a14; --wine-deep: #240509;
+            --gold: #d4af37; --gold-light: #f1d98a; --gold-dark: #8a6a1f; --cream: #f6ecd6;
+            --gold-grad: linear-gradient(135deg, #f1d98a 0%, #b8912f 25%, #7a5a17 50%, #e8cd75 75%, #9a7a25 100%);
+        }
+        html { background: var(--wine-deep); }
+        body {
+            margin: 0; padding: 24px 16px 60px; min-height: 100vh; text-align: center;
+            color: var(--cream); font-family: 'Lora', Georgia, serif;
+            background:
+                radial-gradient(ellipse at 50% -10%, rgba(255, 120, 140, .18), transparent 55%),
+                repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 2px, transparent 2px 22px),
+                linear-gradient(180deg, #5b1020 0%, #3d0a14 45%, #240509 100%);
+            background-attachment: fixed;
+        }
+        h1, h2 { font-family: 'Playfair Display', Georgia, serif; color: var(--gold-light); text-shadow: 0 2px 8px rgba(0,0,0,.6); letter-spacing: .5px; }
+        h1 { font-size: 2.1rem; margin: 6px 0 14px; }
+        h2 { display: flex; align-items: center; gap: 14px; max-width: 700px; margin: 30px auto 8px; font-weight: 500; }
+        h2::before, h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+
+        /* Live camera in a gold frame */
+        #video {
+            display: block; margin: 14px auto 18px; width: min(92vw, 520px); box-sizing: border-box;
+            background: #000; border: 14px solid; border-image: var(--gold-grad) 1;
+            box-shadow: 0 16px 36px rgba(0,0,0,.65);
+        }
+
+        /* Buttons */
+        .btn {
+            font-family: inherit; font-size: .95rem; letter-spacing: .3px; cursor: pointer;
+            margin: 5px 4px; padding: 10px 18px; border-radius: 999px;
+            border: 1px solid var(--gold); color: var(--cream);
+            background: linear-gradient(180deg, #8e2a3c, #5a1020);
+            box-shadow: 0 3px 10px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.18);
+            transition: transform .15s, filter .15s;
+        }
+        .btn:hover { filter: brightness(1.18); transform: translateY(-1px); }
+        .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+        .btn-danger { background: linear-gradient(180deg, #3a0a12, #1a0206); border-color: #b34; color: #f6b5bd; }
+        .btn.recording { background: linear-gradient(180deg, #e53935, #8e0000); animation: pulse 1.2s infinite; }
+        @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(229,57,53,.25), 0 3px 10px rgba(0,0,0,.45); } }
+        #statusText { min-height: 1.4em; color: var(--gold-light); font-style: italic; }
+
+        /* Album chips */
+        .album-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 12px 0; }
+        .chip {
+            font-family: inherit; padding: 7px 16px; border-radius: 999px; cursor: pointer;
+            border: 1px solid var(--gold-dark); background: rgba(246,236,214,.08); color: var(--cream);
+        }
+        .chip:hover { background: rgba(246,236,214,.18); }
+        .chip.active { background: linear-gradient(180deg, var(--gold-light), var(--gold)); color: var(--wine-deep); border-color: var(--gold-light); font-weight: 600; }
+        .chip.new { border-style: dashed; }
+        #deleteAlbumBtn { display: none; }
+
+        /* Gallery wall: every item hangs in a picture frame */
+        .album-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+            gap: 38px 24px; max-width: 1000px; margin: 28px auto; padding: 0 8px;
+        }
+        .album-grid > p { grid-column: 1 / -1; opacity: .7; font-style: italic; }
+        .album-item {
+            position: relative; cursor: pointer; background: none; border: none; box-shadow: none; padding: 0;
+            transform-origin: 50% 0; transition: transform .25s ease;
+        }
+        .album-item:nth-child(3n+1) { transform: rotate(-1.4deg); }
+        .album-item:nth-child(3n+2) { transform: rotate(1deg); }
+        .album-item:nth-child(3n)   { transform: rotate(-.5deg); }
+        .album-item:hover { transform: rotate(0) translateY(-6px) scale(1.03); z-index: 2; }
+        .album-item::before { /* the nail */
+            content: ""; position: absolute; top: -9px; left: 50%; width: 10px; height: 10px; margin-left: -5px;
+            border-radius: 50%; z-index: 3;
+            background: radial-gradient(circle at 35% 30%, #fff3c4, #b8912f 55%, #5c4310);
+            box-shadow: 0 2px 3px rgba(0,0,0,.6);
+        }
+        .album-item-img {
+            position: relative; box-sizing: border-box; aspect-ratio: 5 / 6; padding: 10px;
+            background: var(--gold-grad); border-radius: 3px;
+            box-shadow: 0 12px 24px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.35), inset 0 0 0 3px rgba(0,0,0,.25);
+        }
+        .album-item-img img, .album-item-img video {
+            display: block; width: 100%; height: 100%; object-fit: cover; box-sizing: border-box;
+            border: 7px solid var(--cream); outline: 2px solid rgba(60,30,0,.55); background: #000;
+        }
+        .album-item-img::after { /* glass glare + inner shadow */
+            content: ""; position: absolute; inset: 10px; pointer-events: none;
+            background: linear-gradient(115deg, rgba(255,255,255,.14), transparent 40%);
+            box-shadow: inset 0 0 14px rgba(0,0,0,.5);
+        }
+        .badge {
+            position: absolute; top: 20px; right: 20px; z-index: 2; pointer-events: none;
+            background: rgba(36,5,9,.85); color: var(--gold-light); border: 1px solid var(--gold);
+            font-size: 12px; padding: 2px 8px; border-radius: 10px;
+        }
+        .album-item-caption { margin: 12px auto 0; max-width: 92%; font-size: .8rem; }
+        .album-item-caption:not(:empty) { /* brass plaque */
+            padding: 5px 10px; border-radius: 3px; font-weight: 600; color: #2b0610;
+            background: linear-gradient(180deg, #e8cd75, #b8912f); box-shadow: 0 2px 5px rgba(0,0,0,.5);
+        }
+        .see-more { display: block; font-size: .65rem; font-weight: 400; opacity: .8; text-decoration: underline; }
+
+        /* Viewer */
+        .modal-overlay { background: rgba(20,2,6,.94) !important; backdrop-filter: blur(4px); }
+        .close-modal { color: var(--gold-light); }
+        #modalImg, #modalVideo {
+            box-sizing: border-box; background: var(--cream); padding: 10px;
+            border: 14px solid; border-image: var(--gold-grad) 1; box-shadow: 0 20px 50px rgba(0,0,0,.7);
+        }
+        #modalVideo { display: none; background: #000; }
+        #modalImg2 { display: none; width: 80px; margin-top: 8px; border: 3px solid var(--gold); border-radius: 4px; cursor: pointer; }
+        .caption-bubble {
+            background: var(--cream); color: var(--wine-deep); border: 2px solid var(--gold);
+            border-radius: 10px; padding: 12px 16px; margin: 14px 0; box-shadow: 0 4px 14px rgba(0,0,0,.5);
+        }
+        .caption-text { margin: 0; font-family: 'Playfair Display', Georgia, serif; font-style: italic; }
+        .caption-empty { margin: 0; opacity: .6; font-style: italic; }
+        .modal-caption textarea, #albumSelect {
+            width: 100%; box-sizing: border-box; padding: 10px; margin-top: 8px; font-family: inherit;
+            background: rgba(246,236,214,.95); color: var(--wine-deep); border: 1px solid var(--gold); border-radius: 8px;
+        }
+        .back-link { display: inline-block; margin-top: 26px; color: var(--gold-light); text-decoration: none; border-bottom: 1px solid var(--gold-dark); }
+
+        .tagline { max-width: 460px; margin: 0 auto 18px; font-style: italic; opacity: .85; }
+        .cam-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+        .btn-big { font-size: 1.15rem; padding: 16px 30px; font-weight: 700; color: #2b0610;
+            background: linear-gradient(180deg, #f1d98a, #c9a24a); border-color: var(--gold-light); }
+        #b2bPrompt { margin: 10px 0; }
+
+        /* Viewer layout (so the page still works if shared.css is missing) */
+        .modal-overlay { position: fixed; inset: 0; z-index: 100; display: none; flex-direction: column; align-items: center; padding: 56px 16px 32px; overflow-y: auto; box-sizing: border-box; }
+        .modal-overlay.visible { display: flex; }
+        .close-modal { position: fixed; top: 10px; right: 20px; font-size: 40px; cursor: pointer; z-index: 101; line-height: 1; }
+        #modalImg { max-width: min(92vw, 640px); max-height: 62vh; object-fit: contain; }
+        #modalVideo { max-width: min(92vw, 640px); }
+        .modal-caption { width: min(92vw, 520px); }
+    </style>
+</head>
+
+<body>
+    <h1>📷 Our Photo Gallery</h1>
+    <p class="tagline">Tap Take Photo or Record Video to open your phone's own camera. You can flip between front and back right inside it.</p>
+
+    <canvas id="canvas" style="display:none;"></canvas>
+    <div class="cam-bar">
+        <button class="btn btn-big" id="cameraBtn">📷 Take Photo</button>
+        <button class="btn btn-big" id="videoBtn">🎥 Record Video</button>
+        <button class="btn" id="b2bBtn">🔁 Back-to-Back</button>
+        <button class="btn" id="uploadBtn">🖼️ Upload</button>
+    </div>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;" />
+    <input type="file" id="videoInput" accept="video/*" capture style="display:none;" />
+    <input type="file" id="b2bInput" accept="image/*" capture style="display:none;" />
+    <input type="file" id="uploadInput" accept="image/*,video/*" multiple style="display:none;" />
+    <div id="b2bPrompt" style="display:none;">
+        <button class="btn btn-big" id="b2bNextBtn">📷 Take shot 2</button>
+        <button class="btn btn-danger" id="b2bCancelBtn">Cancel</button>
+    </div>
+    <p id="statusText"></p>
+
+    <h2>Albums</h2>
+    <div class="album-bar" id="albumBar"></div>
+    <button class="btn btn-danger" id="deleteAlbumBtn">Delete this album</button>
+    <div class="album-grid" id="albumGrid"></div>
+
+    <a class="back-link" href="page2.html">&larr; Back</a>
+
+    <!-- Modal for viewing a photo/video large -->
+    <div class="modal-overlay" id="modalOverlay">
+        <span class="close-modal" id="closeModal">&times;</span>
+        <img id="modalImg" src="" alt="photo" />
+        <img id="modalImg2" src="" alt="other camera" title="Tap to swap" />
+        <video id="modalVideo" controls playsinline></video>
+        <div class="modal-caption">
+            <div class="caption-bubble" id="captionBubble">
+                <p id="captionDisplay" class="caption-text"></p>
+                <p id="captionEmpty" class="caption-empty">No message yet — add one below.</p>
+            </div>
+            <textarea id="captionInput" placeholder="Write a message on this item..."></textarea>
+            <select id="albumSelect"></select>
+            <button class="btn" id="saveCaptionBtn" style="margin-top:10px;">Save</button>
+            <button class="btn btn-danger" id="deletePhotoBtn" style="margin-top:10px;">Delete</button>
+        </div>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const canvas = $("canvas"), statusText = $("statusText");
+        const cameraBtn = $("cameraBtn"), videoBtn = $("videoBtn"), b2bBtn = $("b2bBtn"), uploadBtn = $("uploadBtn");
+        const cameraInput = $("cameraInput"), videoInput = $("videoInput"), b2bInput = $("b2bInput"), uploadInput = $("uploadInput");
+        const b2bPrompt = $("b2bPrompt");
+        const albumGrid = $("albumGrid"), albumBar = $("albumBar"), deleteAlbumBtn = $("deleteAlbumBtn");
+        const modalOverlay = $("modalOverlay"), modalImg = $("modalImg"), modalImg2 = $("modalImg2"), modalVideo = $("modalVideo");
+        const captionInput = $("captionInput"), captionDisplay = $("captionDisplay"), captionEmpty = $("captionEmpty");
+        const albumSelect = $("albumSelect");
+
+        const MAX_WIDTH = 800;      // photos are shrunk so they fit in a Firestore document
+        const MAX_VIDEO_MB = 100;   // upload size limit for videos
+
+        let currentPhotoId = null, currentItem = null, swapped = false;
+        let currentAlbum = "all";   // "all" or an album id
+        let photos = [], albums = [], b2bFirst = null;
+
+        const hasDb = typeof db !== "undefined";
+
+        // Buttons are wired first so they work even if Firebase isn't set up yet
+        cameraBtn.addEventListener("click", () => cameraInput.click());
+        videoBtn.addEventListener("click", () => videoInput.click());
+        uploadBtn.addEventListener("click", () => uploadInput.click());
+        b2bBtn.addEventListener("click", () => {
+            resetB2b();
+            say("Shot 1 of 2: take your first photo.");
+            b2bInput.click();
+        });
+
+        const say = (msg, clearAfter) => {
+            statusText.textContent = msg;
+            if (clearAfter) setTimeout(() => { if (statusText.textContent === msg) statusText.textContent = ""; }, clearAfter);
+        };
+        function escapeHtml(str) {
+            const div = document.createElement("div");
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        const isVideo = (f) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name);
+        const isImage = (f) => f.type.startsWith("image/") || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(f.name);
+
+        /* ---------------- Albums ---------------- */
+        if (!hasDb) say("Firebase isn't connected. Check that firebase-config.js is in the same folder as index.html.");
+        if (hasDb) db.collection("albums").orderBy("createdAt", "asc").onSnapshot((snap) => {
+            albums = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            if (currentAlbum !== "all" && !albums.find((a) => a.id === currentAlbum)) currentAlbum = "all";
+            renderAlbumBar();
+            renderGrid();
+        }, (err) => console.error(err));
+
+        function renderAlbumBar() {
+            albumBar.innerHTML = "";
+            const addChip = (label, id, cls) => {
+                const b = document.createElement("button");
+                b.className = "chip" + (cls ? " " + cls : "") + (id === currentAlbum ? " active" : "");
+                b.textContent = label;
+                albumBar.appendChild(b);
+                return b;
+            };
+            addChip(`All (${photos.length})`, "all").onclick = () => { currentAlbum = "all"; renderAlbumBar(); renderGrid(); };
+            albums.forEach((a) => {
+                const n = photos.filter((p) => p.albumId === a.id).length;
+                addChip(`${a.name} (${n})`, a.id).onclick = () => { currentAlbum = a.id; renderAlbumBar(); renderGrid(); };
+            });
+            addChip("+ New Album", null, "new").onclick = () => {
+                const name = (prompt("Album name?") || "").trim();
+                if (!name) return;
+                db.collection("albums").add({ name, createdAt: firebase.firestore.FieldValue.serverTimestamp() })
+                    .then((ref) => { currentAlbum = ref.id; renderAlbumBar(); renderGrid(); })
+                    .catch((e) => { console.error(e); alert("Couldn't create album."); });
+            };
+            deleteAlbumBtn.style.display = currentAlbum === "all" ? "none" : "inline-block";
+        }
+
+        deleteAlbumBtn.addEventListener("click", async () => {
+            if (currentAlbum === "all") return;
+            if (!confirm("Delete this album? Its photos and videos are kept and will still show under All.")) return;
+            try {
+                const batch = db.batch();
+                photos.filter((p) => p.albumId === currentAlbum)
+                    .forEach((p) => batch.update(db.collection("photos").doc(p.id), { albumId: "" }));
+                batch.delete(db.collection("albums").doc(currentAlbum));
+                await batch.commit();
+            } catch (e) { console.error(e); alert("Couldn't delete album."); }
+        });
+
+        /* ---------------- Live feed ---------------- */
+        if (hasDb) db.collection("photos").orderBy("createdAt", "asc").onSnapshot((snapshot) => {
+            photos = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+            renderAlbumBar();
+            renderGrid();
+        }, (err) => {
+            console.error(err);
+            say("Couldn't load album. Check firebase-config.js and your Firestore rules.");
+        });
+
+        function renderGrid() {
+            albumGrid.innerHTML = "";
+            const list = currentAlbum === "all" ? photos : photos.filter((p) => p.albumId === currentAlbum);
+            if (!list.length) {
+                albumGrid.innerHTML = "<p>Nothing here yet.</p>";
+                return;
+            }
+            list.forEach((photo) => {
+                const item = document.createElement("div");
+                item.className = "album-item";
+
+                const imgWrap = document.createElement("div");
+                imgWrap.className = "album-item-img";
+                if (photo.type === "video") {
+                    const v = document.createElement("video");
+                    v.src = photo.src + "#t=0.1";
+                    v.preload = "metadata";
+                    v.muted = true;
+                    v.playsInline = true;
+                    imgWrap.appendChild(v);
+                    imgWrap.insertAdjacentHTML("beforeend", '<span class="badge">▶ Video</span>');
+                } else {
+                    const img = document.createElement("img");
+                    img.src = photo.src;
+                    imgWrap.appendChild(img);
+                    if (photo.type === "pair") imgWrap.insertAdjacentHTML("beforeend", '<span class="badge">🔁 2</span>');
+                }
+                item.appendChild(imgWrap);
+
+                const captionBar = document.createElement("div");
+                captionBar.className = "album-item-caption";
+                if (photo.caption && photo.caption.trim()) {
+                    const preview = photo.caption.length > 18 ? photo.caption.slice(0, 18) + "..." : photo.caption;
+                    captionBar.innerHTML = `${escapeHtml(preview)} <span class="see-more">See more</span>`;
+                }
+                item.appendChild(captionBar);
+
+                item.addEventListener("click", () => openModal(photo));
+                albumGrid.appendChild(item);
+            });
+        }
+
+        /* ---------------- Saving ---------------- */
+        const albumForNew = () => (currentAlbum === "all" ? "" : currentAlbum);
+
+        function savePhoto(dataUrl, extra = {}) {
+            say("Uploading...");
+            return db.collection("photos").add({
+                type: "photo",
+                src: dataUrl,
+                caption: "",
+                albumId: albumForNew(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                ...extra
+            }).then(() => say("Added!", 2000))
+              .catch((err) => { console.error(err); say("Upload failed. Check your Firebase config/rules."); });
+        }
+
+        function resizeImageFile(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                img.onload = () => {
+                    const scale = Math.min(1, MAX_WIDTH / img.width);
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+                    URL.revokeObjectURL(url);
+                    resolve(canvas.toDataURL("image/jpeg", 0.6));
+                };
+                img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("bad image")); };
+                img.src = url;
+            });
+        }
+
+        function uploadVideo(file) {
+            return new Promise((resolve) => {
+                if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
+                    say(`That video is over ${MAX_VIDEO_MB} MB. Try a shorter one.`, 4000);
+                    return resolve();
+                }
+                const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
+                const ref = firebase.storage().ref(`videos/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`);
+                const task = ref.put(file, { contentType: file.type || "video/mp4" });
+                task.on("state_changed",
+                    (s) => say(`Uploading video... ${Math.round((s.bytesTransferred / s.totalBytes) * 100)}%`),
+                    (err) => {
+                        console.error(err);
+                        say("Video upload failed. Check that Firebase Storage is enabled and storageBucket is set in firebase-config.js.");
+                        resolve();
+                    },
+                    async () => {
+                        try {
+                            const url = await ref.getDownloadURL();
+                            await db.collection("photos").add({
+                                type: "video", src: url, caption: "", albumId: albumForNew(),
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                            say("Video added!", 2000);
+                        } catch (e) { console.error(e); say("Video uploaded but couldn't be saved to the album."); }
+                        resolve();
+                    });
+            });
+        }
+
+        /* ---------------- Camera + upload (uses the phone's own camera app) ---------------- */
+        async function handleFiles(fileList) {
+            for (const file of Array.from(fileList)) {
+                try {
+                    if (isVideo(file)) await uploadVideo(file);
+                    else if (isImage(file)) await savePhoto(await resizeImageFile(file));
+                    else say(`Skipped ${file.name} (not a photo or video).`, 3000);
+                } catch (e) {
+                    console.error(e);
+                    say("Couldn't read that file.", 3000);
+                }
+            }
+        }
+
+        [cameraInput, videoInput, uploadInput].forEach((input) => {
+            input.addEventListener("change", () => {
+                const files = Array.from(input.files);
+                input.value = "";   // lets the same file be picked again
+                if (files.length) handleFiles(files);
+            });
+        });
+
+        /* ---------------- Back-to-back (two shots, flip camera in between) ---------------- */
+        function resetB2b() {
+            b2bFirst = null;
+            b2bPrompt.style.display = "none";
+        }
+        $("b2bNextBtn").addEventListener("click", () => b2bInput.click());
+        $("b2bCancelBtn").addEventListener("click", () => { resetB2b(); say(""); });
+
+        b2bInput.addEventListener("change", async () => {
+            const file = b2bInput.files[0];
+            b2bInput.value = "";
+            if (!file) return;
+            try {
+                const data = await resizeImageFile(file);
+                if (!b2bFirst) {
+                    b2bFirst = data;
+                    b2bPrompt.style.display = "block";
+                    say("Got shot 1! Now flip your camera and take shot 2.");
+                } else {
+                    const first = b2bFirst;
+                    resetB2b();
+                    await savePhoto(first, { type: "pair", src2: data });
+                }
+            } catch (e) {
+                console.error(e);
+                say("Couldn't read that photo.", 3000);
+            }
+        });
+
+        /* ---------------- Modal ---------------- */
+        function openModal(photo) {
+            currentPhotoId = photo.id;
+            currentItem = photo;
+            swapped = false;
+
+            modalImg.style.display = modalImg2.style.display = modalVideo.style.display = "none";
+            if (photo.type === "video") {
+                modalVideo.src = photo.src;
+                modalVideo.style.display = "block";
+            } else {
+                modalImg.src = photo.src;
+                modalImg.style.display = "";
+                if (photo.type === "pair" && photo.src2) {
+                    modalImg2.src = photo.src2;
+                    modalImg2.style.display = "block";
+                }
+            }
+
+            captionInput.value = photo.caption || "";
+            updateCaptionBubble(photo.caption || "");
+
+            albumSelect.innerHTML = '<option value="">No album</option>';
+            albums.forEach((a) => {
+                const o = document.createElement("option");
+                o.value = a.id;
+                o.textContent = a.name;
+                albumSelect.appendChild(o);
+            });
+            albumSelect.value = photo.albumId || "";
+
+            modalOverlay.classList.add("visible");
+        }
+
+        modalImg2.addEventListener("click", () => {
+            swapped = !swapped;
+            modalImg.src = swapped ? currentItem.src2 : currentItem.src;
+            modalImg2.src = swapped ? currentItem.src : currentItem.src2;
+        });
+
+        function updateCaptionBubble(caption) {
+            const has = caption && caption.trim();
+            captionDisplay.textContent = has ? caption : "";
+            captionDisplay.style.display = has ? "block" : "none";
+            captionEmpty.style.display = has ? "none" : "block";
+        }
+
+        function closeTheModal() {
+            modalVideo.pause();
+            modalVideo.removeAttribute("src");
+            modalVideo.load();
+            modalOverlay.classList.remove("visible");
+        }
+        $("closeModal").addEventListener("click", closeTheModal);
+
+        $("saveCaptionBtn").addEventListener("click", () => {
+            db.collection("photos").doc(currentPhotoId).update({
+                caption: captionInput.value,
+                albumId: albumSelect.value
+            }).then(() => updateCaptionBubble(captionInput.value))
+              .catch((err) => { console.error(err); alert("Couldn't save. Please try again."); });
+        });
+
+        $("deletePhotoBtn").addEventListener("click", async () => {
+            if (!confirm("Delete this? This can't be undone.")) return;
+            try {
+                if (currentItem && currentItem.type === "video") {
+                    try { await firebase.storage().refFromURL(currentItem.src).delete(); }
+                    catch (e) { console.warn("Couldn't remove video file from Storage", e); }
+                }
+                await db.collection("photos").doc(currentPhotoId).delete();
+                closeTheModal();
+            } catch (err) {
+                console.error(err);
+                alert("Couldn't delete. Please try again.");
+            }
+        });
+    </script>
+</body>
+
+</html>
