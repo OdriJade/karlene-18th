@@ -131,13 +131,11 @@
             width: 100%; box-sizing: border-box; padding: 10px; margin-top: 8px; font-family: inherit;
             background: rgba(246,236,214,.95); color: var(--wine-deep); border: 1px solid var(--gold); border-radius: 8px;
         }
-        .back-link { display: inline-block; margin-top: 26px; color: var(--gold-light); text-decoration: none; border-bottom: 1px solid var(--gold-dark); }
 
         .tagline { max-width: 460px; margin: 0 auto 18px; font-style: italic; opacity: .85; }
         .cam-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
         .btn-big { font-size: 1.15rem; padding: 16px 30px; font-weight: 700; color: #2b0610;
             background: linear-gradient(180deg, #f1d98a, #c9a24a); border-color: var(--gold-light); }
-        #b2bPrompt { margin: 10px 0; }
 
         /* Viewer layout (so the page still works if shared.css is missing) */
         .modal-overlay { position: fixed; inset: 0; z-index: 100; display: none; flex-direction: column; align-items: center; padding: 56px 16px 32px; overflow-y: auto; box-sizing: border-box; }
@@ -157,25 +155,17 @@
     <div class="cam-bar">
         <button class="btn btn-big" id="cameraBtn">📷 Take Photo</button>
         <button class="btn btn-big" id="videoBtn">🎥 Record Video</button>
-        <button class="btn" id="b2bBtn">🔁 Back-to-Back</button>
         <button class="btn" id="uploadBtn">🖼️ Upload</button>
     </div>
     <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;" />
     <input type="file" id="videoInput" accept="video/*" capture style="display:none;" />
-    <input type="file" id="b2bInput" accept="image/*" capture style="display:none;" />
     <input type="file" id="uploadInput" accept="image/*,video/*" multiple style="display:none;" />
-    <div id="b2bPrompt" style="display:none;">
-        <button class="btn btn-big" id="b2bNextBtn">📷 Take shot 2</button>
-        <button class="btn btn-danger" id="b2bCancelBtn">Cancel</button>
-    </div>
     <p id="statusText"></p>
 
     <h2>Albums</h2>
     <div class="album-bar" id="albumBar"></div>
     <button class="btn btn-danger" id="deleteAlbumBtn">Delete this album</button>
     <div class="album-grid" id="albumGrid"></div>
-
-    <a class="back-link" href="page2.html">&larr; Back</a>
 
     <!-- Modal for viewing a photo/video large -->
     <div class="modal-overlay" id="modalOverlay">
@@ -198,9 +188,8 @@
     <script>
         const $ = (id) => document.getElementById(id);
         const canvas = $("canvas"), statusText = $("statusText");
-        const cameraBtn = $("cameraBtn"), videoBtn = $("videoBtn"), b2bBtn = $("b2bBtn"), uploadBtn = $("uploadBtn");
-        const cameraInput = $("cameraInput"), videoInput = $("videoInput"), b2bInput = $("b2bInput"), uploadInput = $("uploadInput");
-        const b2bPrompt = $("b2bPrompt");
+        const cameraBtn = $("cameraBtn"), videoBtn = $("videoBtn"), uploadBtn = $("uploadBtn");
+        const cameraInput = $("cameraInput"), videoInput = $("videoInput"), uploadInput = $("uploadInput");
         const albumGrid = $("albumGrid"), albumBar = $("albumBar"), deleteAlbumBtn = $("deleteAlbumBtn");
         const modalOverlay = $("modalOverlay"), modalImg = $("modalImg"), modalImg2 = $("modalImg2"), modalVideo = $("modalVideo");
         const captionInput = $("captionInput"), captionDisplay = $("captionDisplay"), captionEmpty = $("captionEmpty");
@@ -211,7 +200,7 @@
 
         let currentPhotoId = null, currentItem = null, swapped = false;
         let currentAlbum = "all";   // "all" or an album id
-        let photos = [], albums = [], b2bFirst = null;
+        let photos = [], albums = [];
 
         const hasDb = typeof db !== "undefined";
 
@@ -219,12 +208,6 @@
         cameraBtn.addEventListener("click", () => cameraInput.click());
         videoBtn.addEventListener("click", () => videoInput.click());
         uploadBtn.addEventListener("click", () => uploadInput.click());
-        b2bBtn.addEventListener("click", () => {
-            resetB2b();
-            say("Shot 1 of 2: take your first photo.");
-            b2bInput.click();
-        });
-
         const say = (msg, clearAfter) => {
             statusText.textContent = msg;
             if (clearAfter) setTimeout(() => { if (statusText.textContent === msg) statusText.textContent = ""; }, clearAfter);
@@ -417,35 +400,6 @@
                 input.value = "";   // lets the same file be picked again
                 if (files.length) handleFiles(files);
             });
-        });
-
-        /* ---------------- Back-to-back (two shots, flip camera in between) ---------------- */
-        function resetB2b() {
-            b2bFirst = null;
-            b2bPrompt.style.display = "none";
-        }
-        $("b2bNextBtn").addEventListener("click", () => b2bInput.click());
-        $("b2bCancelBtn").addEventListener("click", () => { resetB2b(); say(""); });
-
-        b2bInput.addEventListener("change", async () => {
-            const file = b2bInput.files[0];
-            b2bInput.value = "";
-            if (!file) return;
-            try {
-                const data = await resizeImageFile(file);
-                if (!b2bFirst) {
-                    b2bFirst = data;
-                    b2bPrompt.style.display = "block";
-                    say("Got shot 1! Now flip your camera and take shot 2.");
-                } else {
-                    const first = b2bFirst;
-                    resetB2b();
-                    await savePhoto(first, { type: "pair", src2: data });
-                }
-            } catch (e) {
-                console.error(e);
-                say("Couldn't read that photo.", 3000);
-            }
         });
 
         /* ---------------- Modal ---------------- */
