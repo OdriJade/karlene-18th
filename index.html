@@ -296,6 +296,7 @@
 
         function savePhoto(dataUrl, extra = {}) {
             say("Uploading...");
+            const slowTimer = setTimeout(() => say("Still not saved. The Firestore database may not be created yet, or its rules block saving. Open Firebase > Databases & Storage > Firestore Database to check."), 15000);
             return db.collection("photos").add({
                 type: "photo",
                 src: dataUrl,
@@ -303,8 +304,8 @@
                 albumId: albumForNew(),
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 ...extra
-            }).then(() => say("Added!", 2000))
-              .catch((err) => { console.error(err); say("Upload failed. Check your Firebase config/rules."); });
+            }).then(() => { clearTimeout(slowTimer); say("Added!", 2000); })
+              .catch((err) => { clearTimeout(slowTimer); console.error(err); say("Upload failed (" + (err.code || "error") + "). Check your Firestore rules."); });
         }
 
         function resizeImageFile(file) {
