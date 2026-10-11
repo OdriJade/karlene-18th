@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="shared.css" />
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
     <script src="firebase-config.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Lora:ital@0;1&display=swap" rel="stylesheet" />
     <style>
@@ -32,12 +31,6 @@
         h2 { display: flex; align-items: center; gap: 14px; max-width: 700px; margin: 30px auto 8px; font-weight: 500; }
         h2::before, h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
 
-        /* Live camera in a gold frame */
-        #video {
-            display: block; margin: 14px auto 18px; width: min(92vw, 520px); box-sizing: border-box;
-            background: #000; border: 14px solid; border-image: var(--gold-grad) 1;
-            box-shadow: 0 16px 36px rgba(0,0,0,.65);
-        }
 
         /* Buttons */
         .btn {
@@ -91,7 +84,7 @@
             background: var(--gold-grad); border-radius: 3px;
             box-shadow: 0 12px 24px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.35), inset 0 0 0 3px rgba(0,0,0,.25);
         }
-        .album-item-img img, .album-item-img video {
+        .album-item-img img {
             display: block; width: 100%; height: 100%; object-fit: cover; box-sizing: border-box;
             border: 7px solid var(--cream); outline: 2px solid rgba(60,30,0,.55); background: #000;
         }
@@ -115,11 +108,9 @@
         /* Viewer */
         .modal-overlay { background: rgba(20,2,6,.94) !important; backdrop-filter: blur(4px); }
         .close-modal { color: var(--gold-light); }
-        #modalImg, #modalVideo {
             box-sizing: border-box; background: var(--cream); padding: 10px;
             border: 14px solid; border-image: var(--gold-grad) 1; box-shadow: 0 20px 50px rgba(0,0,0,.7);
         }
-        #modalVideo { display: none; background: #000; }
         #modalImg2 { display: none; width: 80px; margin-top: 8px; border: 3px solid var(--gold); border-radius: 4px; cursor: pointer; }
         .caption-bubble {
             background: var(--cream); color: var(--wine-deep); border: 2px solid var(--gold);
@@ -142,24 +133,21 @@
         .modal-overlay.visible { display: flex; }
         .close-modal { position: fixed; top: 10px; right: 20px; font-size: 40px; cursor: pointer; z-index: 101; line-height: 1; }
         #modalImg { max-width: min(92vw, 640px); max-height: 62vh; object-fit: contain; }
-        #modalVideo { max-width: min(92vw, 640px); }
         .modal-caption { width: min(92vw, 520px); }
     </style>
 </head>
 
 <body>
     <h1>📷 Our Photo Gallery</h1>
-    <p class="tagline">Tap Take Photo or Record Video to open your phone's own camera. You can flip between front and back right inside it.</p>
+    <p class="tagline">Tap Take Photo to open your phone's own camera. You can flip between front and back right inside it.</p>
 
     <canvas id="canvas" style="display:none;"></canvas>
     <div class="cam-bar">
         <button class="btn btn-big" id="cameraBtn">📷 Take Photo</button>
-        <button class="btn btn-big" id="videoBtn">🎥 Record Video</button>
         <button class="btn" id="uploadBtn">🖼️ Upload</button>
     </div>
     <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;" />
-    <input type="file" id="videoInput" accept="video/*" capture style="display:none;" />
-    <input type="file" id="uploadInput" accept="image/*,video/*" multiple style="display:none;" />
+    <input type="file" id="uploadInput" accept="image/*" multiple style="display:none;" />
     <p id="statusText"></p>
 
     <h2>Albums</h2>
@@ -167,18 +155,17 @@
     <button class="btn btn-danger" id="deleteAlbumBtn">Delete this album</button>
     <div class="album-grid" id="albumGrid"></div>
 
-    <!-- Modal for viewing a photo/video large -->
+    <!-- Modal for viewing a photo large -->
     <div class="modal-overlay" id="modalOverlay">
         <span class="close-modal" id="closeModal">&times;</span>
         <img id="modalImg" src="" alt="photo" />
         <img id="modalImg2" src="" alt="other camera" title="Tap to swap" />
-        <video id="modalVideo" controls playsinline></video>
         <div class="modal-caption">
             <div class="caption-bubble" id="captionBubble">
                 <p id="captionDisplay" class="caption-text"></p>
                 <p id="captionEmpty" class="caption-empty">No message yet — add one below.</p>
             </div>
-            <textarea id="captionInput" placeholder="Write a message on this item..."></textarea>
+            <textarea id="captionInput" placeholder="Write a message on this photo..."></textarea>
             <select id="albumSelect"></select>
             <button class="btn" id="saveCaptionBtn" style="margin-top:10px;">Save</button>
             <button class="btn btn-danger" id="deletePhotoBtn" style="margin-top:10px;">Delete</button>
@@ -188,15 +175,14 @@
     <script>
         const $ = (id) => document.getElementById(id);
         const canvas = $("canvas"), statusText = $("statusText");
-        const cameraBtn = $("cameraBtn"), videoBtn = $("videoBtn"), uploadBtn = $("uploadBtn");
-        const cameraInput = $("cameraInput"), videoInput = $("videoInput"), uploadInput = $("uploadInput");
+        const cameraBtn = $("cameraBtn"), uploadBtn = $("uploadBtn");
+        const cameraInput = $("cameraInput"), uploadInput = $("uploadInput");
         const albumGrid = $("albumGrid"), albumBar = $("albumBar"), deleteAlbumBtn = $("deleteAlbumBtn");
-        const modalOverlay = $("modalOverlay"), modalImg = $("modalImg"), modalImg2 = $("modalImg2"), modalVideo = $("modalVideo");
+        const modalOverlay = $("modalOverlay"), modalImg = $("modalImg"), modalImg2 = $("modalImg2");
         const captionInput = $("captionInput"), captionDisplay = $("captionDisplay"), captionEmpty = $("captionEmpty");
         const albumSelect = $("albumSelect");
 
         const MAX_WIDTH = 800;      // photos are shrunk so they fit in a Firestore document
-        const MAX_VIDEO_MB = 100;   // upload size limit for videos
 
         let currentPhotoId = null, currentItem = null, swapped = false;
         let currentAlbum = "all";   // "all" or an album id
@@ -206,7 +192,6 @@
 
         // Buttons are wired first so they work even if Firebase isn't set up yet
         cameraBtn.addEventListener("click", () => cameraInput.click());
-        videoBtn.addEventListener("click", () => videoInput.click());
         uploadBtn.addEventListener("click", () => uploadInput.click());
         const say = (msg, clearAfter) => {
             statusText.textContent = msg;
@@ -217,7 +202,6 @@
             div.textContent = str;
             return div.innerHTML;
         }
-        const isVideo = (f) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name);
         const isImage = (f) => f.type.startsWith("image/") || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(f.name);
 
         /* ---------------- Albums ---------------- */
@@ -255,7 +239,7 @@
 
         deleteAlbumBtn.addEventListener("click", async () => {
             if (currentAlbum === "all") return;
-            if (!confirm("Delete this album? Its photos and videos are kept and will still show under All.")) return;
+            if (!confirm("Delete this album? Its photos are kept and will still show under All.")) return;
             try {
                 const batch = db.batch();
                 photos.filter((p) => p.albumId === currentAlbum)
@@ -288,20 +272,10 @@
 
                 const imgWrap = document.createElement("div");
                 imgWrap.className = "album-item-img";
-                if (photo.type === "video") {
-                    const v = document.createElement("video");
-                    v.src = photo.src + "#t=0.1";
-                    v.preload = "metadata";
-                    v.muted = true;
-                    v.playsInline = true;
-                    imgWrap.appendChild(v);
-                    imgWrap.insertAdjacentHTML("beforeend", '<span class="badge">▶ Video</span>');
-                } else {
-                    const img = document.createElement("img");
-                    img.src = photo.src;
-                    imgWrap.appendChild(img);
-                    if (photo.type === "pair") imgWrap.insertAdjacentHTML("beforeend", '<span class="badge">🔁 2</span>');
-                }
+                const img = document.createElement("img");
+                img.src = photo.src;
+                imgWrap.appendChild(img);
+                if (photo.type === "pair") imgWrap.insertAdjacentHTML("beforeend", '<span class="badge">🔁 2</span>');
                 item.appendChild(imgWrap);
 
                 const captionBar = document.createElement("div");
@@ -350,43 +324,12 @@
             });
         }
 
-        function uploadVideo(file) {
-            return new Promise((resolve) => {
-                if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
-                    say(`That video is over ${MAX_VIDEO_MB} MB. Try a shorter one.`, 4000);
-                    return resolve();
-                }
-                const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
-                const ref = firebase.storage().ref(`videos/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`);
-                const task = ref.put(file, { contentType: file.type || "video/mp4" });
-                task.on("state_changed",
-                    (s) => say(`Uploading video... ${Math.round((s.bytesTransferred / s.totalBytes) * 100)}%`),
-                    (err) => {
-                        console.error(err);
-                        say("Video upload failed. Check that Firebase Storage is enabled and storageBucket is set in firebase-config.js.");
-                        resolve();
-                    },
-                    async () => {
-                        try {
-                            const url = await ref.getDownloadURL();
-                            await db.collection("photos").add({
-                                type: "video", src: url, caption: "", albumId: albumForNew(),
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                            });
-                            say("Video added!", 2000);
-                        } catch (e) { console.error(e); say("Video uploaded but couldn't be saved to the album."); }
-                        resolve();
-                    });
-            });
-        }
-
         /* ---------------- Camera + upload (uses the phone's own camera app) ---------------- */
         async function handleFiles(fileList) {
             for (const file of Array.from(fileList)) {
                 try {
-                    if (isVideo(file)) await uploadVideo(file);
-                    else if (isImage(file)) await savePhoto(await resizeImageFile(file));
-                    else say(`Skipped ${file.name} (not a photo or video).`, 3000);
+                    if (isImage(file)) await savePhoto(await resizeImageFile(file));
+                    else say(`Skipped ${file.name} (not a photo).`, 3000);
                 } catch (e) {
                     console.error(e);
                     say("Couldn't read that file.", 3000);
@@ -394,7 +337,7 @@
             }
         }
 
-        [cameraInput, videoInput, uploadInput].forEach((input) => {
+        [cameraInput, uploadInput].forEach((input) => {
             input.addEventListener("change", () => {
                 const files = Array.from(input.files);
                 input.value = "";   // lets the same file be picked again
@@ -408,17 +351,11 @@
             currentItem = photo;
             swapped = false;
 
-            modalImg.style.display = modalImg2.style.display = modalVideo.style.display = "none";
-            if (photo.type === "video") {
-                modalVideo.src = photo.src;
-                modalVideo.style.display = "block";
-            } else {
-                modalImg.src = photo.src;
-                modalImg.style.display = "";
-                if (photo.type === "pair" && photo.src2) {
-                    modalImg2.src = photo.src2;
-                    modalImg2.style.display = "block";
-                }
+            modalImg.src = photo.src;
+            modalImg2.style.display = "none";
+            if (photo.type === "pair" && photo.src2) {
+                modalImg2.src = photo.src2;
+                modalImg2.style.display = "block";
             }
 
             captionInput.value = photo.caption || "";
@@ -450,9 +387,6 @@
         }
 
         function closeTheModal() {
-            modalVideo.pause();
-            modalVideo.removeAttribute("src");
-            modalVideo.load();
             modalOverlay.classList.remove("visible");
         }
         $("closeModal").addEventListener("click", closeTheModal);
@@ -468,10 +402,6 @@
         $("deletePhotoBtn").addEventListener("click", async () => {
             if (!confirm("Delete this? This can't be undone.")) return;
             try {
-                if (currentItem && currentItem.type === "video") {
-                    try { await firebase.storage().refFromURL(currentItem.src).delete(); }
-                    catch (e) { console.warn("Couldn't remove video file from Storage", e); }
-                }
                 await db.collection("photos").doc(currentPhotoId).delete();
                 closeTheModal();
             } catch (err) {
